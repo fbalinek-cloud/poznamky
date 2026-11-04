@@ -316,8 +316,9 @@ textarea{resize:none;min-height:64px}
 const PROD=true;const KEY='kalk-couple';
 const SB_URL='https://hurjhwigubfpjjyatcnb.supabase.co';
 const SB_KEY='sb_publishable_RM2-xF2arntPIlFdaI9J6g_tKrsv9xS';
-const EMAIL_F='fbalinek@gmail.com';
-const EMAIL_Z='baruska@baf.cz';
+const LOGIN_EMAIL='fbalinek@gmail.com';
+const CYCLE_HISTORY=[{start:'2026-05-12',end:'2026-05-17'},{start:'2026-06-09',end:'2026-06-14'},{start:'2026-07-07',end:'2026-07-12'},{start:'2026-08-04',end:'2026-08-09'},{start:'2026-09-15',end:'2026-09-21'},{start:'2026-10-14',end:'2026-10-21'}];
+const CYCLE_DAYS={'2026-10-14':{flow:'slabé',sym:[]},'2026-10-15':{flow:'slabé',sym:['Křeče']},'2026-10-16':{flow:'silné',sym:['Křeče','Únava']},'2026-10-17':{flow:'silné',sym:[]},'2026-10-18':{flow:'silné',sym:[]},'2026-10-19':{flow:'silné',sym:[]},'2026-10-20':{flow:'střední',sym:[]},'2026-10-21':{flow:'slabé',sym:[]}};
 const LV={jemne:'jemné',hrave:'hravé',explicit:'explicitní',doma:'jsem doma'};
 const PRESETS={
   f:{jemne:['Myslím na tebe','Chybíš mi','Těším se na tebe večer'],
@@ -371,9 +372,10 @@ function prodSeed(){var s=seed();
   s.pokes=[];s.ratings=[];s.together=[];s.matches=[];s.coupons=[];s.events=[];s.inbox=[];
   s.marks={f:[],z:[]};s.freq={f:null,z:null,ok:{}};s.tried=[];s.rewardPick={};
   s.qa={};s.rituals={};s.challenge={};s.body={f:{},z:{}};s.bodyReact={f:{},z:{}};s.pleasure={f:[],z:[]};
-  s.cycle={periods:[],days:{}};s.pregnancy=null;s.babyMode={f:false,z:false};s.moodLog=[];
+  s.cycle={periods:CYCLE_HISTORY.map(function(p){return {start:p.start,end:p.end}}),days:JSON.parse(JSON.stringify(CYCLE_DAYS))};s.pregnancy=null;s.babyMode={f:false,z:false};s.moodLog=[];
   s.badgesSeen={f:[],z:[]};s.resetDay={};s.alertSeen={};s.libSeeded=true;
   s.users.f.mood='yellow';s.users.z.mood='yellow';return s}
+function seedCycleIfEmpty(){if(S.cycle&&(!S.cycle.periods||!S.cycle.periods.length)&&!S.cycleSeeded){S.cycle={periods:CYCLE_HISTORY.map(function(p){return {start:p.start,end:p.end}}),days:JSON.parse(JSON.stringify(CYCLE_DAYS))};S.cycleSeeded=true;return true}return false}
 function fillDefaults(S){const d=prodSeed();
   for(const key in d){if(S[key]===undefined||S[key]===null)S[key]=d[key]}
   S.users=S.users||d.users;for(const u of ['f','z'])S.users[u]=Object.assign({},d.users[u],S.users[u]||{});
@@ -389,6 +391,7 @@ try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!S||!S.users)S=prodSeed();else fillDefaults(S);
 let deviceRole='f';S.me='f';
 let sb=null,cloudReady=false,saveTimer=null;
+seedCycleIfEmpty();
 function cloudSave(){if(!sb||!cloudReady)return;clearTimeout(saveTimer);saveTimer=setTimeout(function(){var payload=Object.assign({},S);delete payload.me;sb.from('state').update({data:payload,updated_by:deviceRole,updated_at:new Date().toISOString()}).eq('id',1).then(function(){},function(){});},500)}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}cloudSave()}
 save();
@@ -1156,33 +1159,41 @@ setInterval(()=>{if(appEl.hidden)return;morningReset();const due=S.pokes.some(p=
   if(due)notifyArrivals();const busy=document.activeElement&&['draft','r_note','z_note','z_date','cnew','newwish','whenc','rnew','q_ans','s_anniv'].includes(document.activeElement.id);
   if(!busy&&(due||(tab==='home'&&U(S.me).desireAt)||S.pokes.some(p=>p.from===S.me&&p.at>now()))){expireDesire();render()}},20000);
 
-/* ===== Supabase sync layer ===== */
-function emailRole(e){return (e&&e.toLowerCase()===EMAIL_F.toLowerCase())?'f':'z'}
-function showLogin(){return new Promise(function(res){
-  ov.innerHTML='<div class="sheet-bg"><div class="sheet" role="dialog" aria-label="Přihlášení"><h2>Přihlášení</h2><p class="note">Zadej e-mail a heslo, které jsi vytvořil v Supabase. Stačí jednou, pak zůstaneš přihlášený.</p><div class="field"><label for="lg_e">E-mail</label><input id="lg_e" type="email" autocomplete="username" autocapitalize="off"></div><div class="field"><label for="lg_p">Heslo</label><input id="lg_p" type="password" autocomplete="current-password"></div><button class="btn block" data-act="dologin">Přihlásit</button><p class="note" id="lg_err"></p></div></div>';
-  function h(e){var t=e.target.closest('[data-act=dologin]');if(!t)return;var em=(document.getElementById('lg_e').value||'').trim();var pw=document.getElementById('lg_p').value||'';var err=document.getElementById('lg_err');err.textContent='Přihlašuji…';t.disabled=true;
-    sb.auth.signInWithPassword({email:em,password:pw}).then(function(r){if(r.error){err.textContent='Nepovedlo se: '+r.error.message;t.disabled=false;}else{ov.removeEventListener('click',h);ov.innerHTML='';res();}});}
+/* ===== Supabase sync layer (single shared password + local role) ===== */
+var localRole=null;try{localRole=localStorage.getItem('kalk-role')}catch(e){}
+function rolePicker(){return new Promise(function(res){
+  ov.innerHTML='<div class="sheet-bg"><div class="sheet" role="dialog" aria-label="Kdo jsi"><h2>Kdo jsi?</h2><p class="note">Vyber jednou, kdo tenhle telefon používá. Pak se to pamatuje.</p><div class="two"><button class="btn" data-act="role" data-r="f">Filip</button><button class="btn ghost" data-act="role" data-r="z">Baruška</button></div></div></div>';
+  function h(e){var t=e.target.closest('[data-act=role]');if(!t)return;var r=t.dataset.r;localRole=r;try{localStorage.setItem('kalk-role',r)}catch(x){}ov.removeEventListener('click',h);ov.innerHTML='';res(r);}
   ov.addEventListener('click',h);
 })}
-function applyRemote(nd){try{if(nd&&nd.users){S=fillDefaults(nd);S.me=deviceRole;if(!appEl.hidden){var busy=document.activeElement&&(document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='TEXTAREA');if(!busy)render();}}}catch(e){}}
+function showLogin(){return new Promise(function(res){
+  ov.innerHTML='<div class="sheet-bg"><div class="sheet" role="dialog" aria-label="Přihlášení"><h2>Zadej heslo</h2><p class="note">Společné heslo k appce. Zadáš ho jen jednou, pak zůstaneš přihlášený.</p><div class="field"><label for="lg_p">Heslo</label><input id="lg_p" type="password" autocomplete="current-password"></div><button class="btn block" data-act="dologin">Pokračovat</button><p class="note" id="lg_err"></p></div></div>';
+  function h(e){var t=e.target.closest('[data-act=dologin]');if(!t)return;var pw=document.getElementById('lg_p').value||'';var err=document.getElementById('lg_err');err.textContent='Přihlašuji…';t.disabled=true;
+    sb.auth.signInWithPassword({email:LOGIN_EMAIL,password:pw}).then(function(r){if(r.error){err.textContent='Nepovedlo se: '+r.error.message;t.disabled=false;}else{ov.removeEventListener('click',h);ov.innerHTML='';res();}}).catch(function(x){err.textContent='Chyba spojení: '+(x&&x.message?x.message:x);t.disabled=false;});}
+  ov.addEventListener('click',h);
+})}
+function applyRemote(nd){try{if(nd&&nd.users){S=fillDefaults(nd);S.me=deviceRole;if(!appEl.hidden){var a=document.activeElement,busy=a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA');if(!busy)render();}}}catch(e){}}
+function loadCloud(){
+  sb.from('state').select('data').eq('id',1).single().then(function(res){
+    var d=res&&res.data?res.data.data:null;
+    if(res&&res.error){try{toast('Kalkulačka','Chyba dat: '+res.error.message)}catch(e){}}
+    if(!d||!d.users){var sd=prodSeed();var payload=Object.assign({},sd);delete payload.me;sb.from('state').update({data:payload,updated_by:deviceRole,updated_at:new Date().toISOString()}).eq('id',1).then(function(){},function(){});S=sd;S.me=deviceRole;}
+    else{S=fillDefaults(d);S.me=deviceRole;}
+    seedCycleIfEmpty();
+    cloudReady=true;save();
+    try{sb.channel('state-sync').on('postgres_changes',{event:'UPDATE',schema:'public',table:'state'},function(p){if(p&&p.new){if(p.new.updated_by===deviceRole)return;applyRemote(p.new.data);}}).subscribe();}catch(e){}
+    if(!appEl.hidden)render();
+  },function(){cloudReady=true;});
+}
+function afterAuth(){rolePicker2().then(function(r){deviceRole=r;S.me=r;loadCloud();});}
+function rolePicker2(){return (localRole==='f'||localRole==='z')?Promise.resolve(localRole):rolePicker();}
 function initCloud(){
-  if(typeof window==='undefined'||!window.supabase||!window.supabase.createClient)return;
+  if(typeof window==='undefined'||!window.supabase||!window.supabase.createClient){try{setTimeout(function(){toast('Kalkulačka','Offline režim — server se nenačetl')},1500)}catch(e){}return;}
   try{sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});}catch(e){return}
-  function afterAuth(session){
-    deviceRole=emailRole(session.user.email);S.me=deviceRole;
-    sb.from('state').select('data').eq('id',1).single().then(function(res){
-      var d=res&&res.data?res.data.data:null;
-      if(!d||!d.users){var sd=prodSeed();var payload=Object.assign({},sd);delete payload.me;sb.from('state').update({data:payload,updated_by:deviceRole,updated_at:new Date().toISOString()}).eq('id',1).then(function(){},function(){});S=sd;S.me=deviceRole;}
-      else{S=fillDefaults(d);S.me=deviceRole;}
-      cloudReady=true;save();
-      try{sb.channel('state-sync').on('postgres_changes',{event:'UPDATE',schema:'public',table:'state'},function(p){if(p&&p.new){if(p.new.updated_by===deviceRole)return;applyRemote(p.new.data);}}).subscribe();}catch(e){}
-      if(!appEl.hidden)render();
-    },function(){cloudReady=true;});
-  }
   sb.auth.getSession().then(function(r){
     var session=r&&r.data?r.data.session:null;
-    if(session){afterAuth(session);}
-    else{showLogin().then(function(){sb.auth.getSession().then(function(r2){var s2=r2&&r2.data?r2.data.session:null;if(s2)afterAuth(s2);});});}
+    if(session){afterAuth();}
+    else{showLogin().then(function(){afterAuth();});}
   },function(){});
 }
 initCloud();
