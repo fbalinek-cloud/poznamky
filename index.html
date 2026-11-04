@@ -310,9 +310,14 @@ textarea{resize:none;min-height:64px}
 </div>
 <div id="overlay"></div>
 <div id="overlay"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 (function(){
 const PROD=true;const KEY='kalk-couple';
+const SB_URL='https://hurjhwigubfpjjyatcnb.supabase.co';
+const SB_KEY='sb_publishable_RM2-xF2arntPIlFdaI9J6g_tKrsv9xS';
+const EMAIL_F='fbalinek@gmail.com';
+const EMAIL_Z='baruska@baf.cz';
 const LV={jemne:'jemné',hrave:'hravé',explicit:'explicitní',doma:'jsem doma'};
 const PRESETS={
   f:{jemne:['Myslím na tebe','Chybíš mi','Těším se na tebe večer'],
@@ -362,7 +367,14 @@ function seed(){
 }
 let pview=null,rStars=0,when='now',whenCustom='',wsub='wish',diceRes=null;
 const vis=p=>p.from===S.me||p.at<=Date.now();
-function fillDefaults(S){const d=seed();
+function prodSeed(){var s=seed();
+  s.pokes=[];s.ratings=[];s.together=[];s.matches=[];s.coupons=[];s.events=[];s.inbox=[];
+  s.marks={f:[],z:[]};s.freq={f:null,z:null,ok:{}};s.tried=[];s.rewardPick={};
+  s.qa={};s.rituals={};s.challenge={};s.body={f:{},z:{}};s.bodyReact={f:{},z:{}};s.pleasure={f:[],z:[]};
+  s.cycle={periods:[],days:{}};s.pregnancy=null;s.babyMode={f:false,z:false};s.moodLog=[];
+  s.badgesSeen={f:[],z:[]};s.resetDay={};s.alertSeen={};s.libSeeded=true;
+  s.users.f.mood='yellow';s.users.z.mood='yellow';return s}
+function fillDefaults(S){const d=prodSeed();
   for(const key in d){if(S[key]===undefined||S[key]===null)S[key]=d[key]}
   S.users=S.users||d.users;for(const u of ['f','z'])S.users[u]=Object.assign({},d.users[u],S.users[u]||{});
   for(const k of ['pokes','wishes','ratings','matches','together','rewards','events','inbox'])if(!Array.isArray(S[k]))S[k]=d[k];
@@ -374,9 +386,11 @@ function fillDefaults(S){const d=seed();
   return S}
 let S=null;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
-if(!S){try{for(let v=40;v>=1;v--){const old=localStorage.getItem('kalk-test-v'+v);if(old){S=JSON.parse(old);break}}}catch(e){}}
-if(!S||!S.users)S=seed();else fillDefaults(S);
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+if(!S||!S.users)S=prodSeed();else fillDefaults(S);
+let deviceRole='f';S.me='f';
+let sb=null,cloudReady=false,saveTimer=null;
+function cloudSave(){if(!sb||!cloudReady)return;clearTimeout(saveTimer);saveTimer=setTimeout(function(){var payload=Object.assign({},S);delete payload.me;sb.from('state').update({data:payload,updated_by:deviceRole,updated_at:new Date().toISOString()}).eq('id',1).then(function(){},function(){});},500)}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}cloudSave()}
 save();
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const other=u=>u==='f'?'z':'f';
@@ -1141,8 +1155,39 @@ if(!S.libSeeded){seedLib();S.libSeeded=true;save()}
 setInterval(()=>{if(appEl.hidden)return;morningReset();const due=S.pokes.some(p=>p.to===S.me&&!p.seen&&p.at<=now());
   if(due)notifyArrivals();const busy=document.activeElement&&['draft','r_note','z_note','z_date','cnew','newwish','whenc','rnew','q_ans','s_anniv'].includes(document.activeElement.id);
   if(!busy&&(due||(tab==='home'&&U(S.me).desireAt)||S.pokes.some(p=>p.from===S.me&&p.at>now()))){expireDesire();render()}},20000);
-})();
-</script>
+
+/* ===== Supabase sync layer ===== */
+function emailRole(e){return (e&&e.toLowerCase()===EMAIL_F.toLowerCase())?'f':'z'}
+function showLogin(){return new Promise(function(res){
+  ov.innerHTML='<div class="sheet-bg"><div class="sheet" role="dialog" aria-label="Přihlášení"><h2>Přihlášení</h2><p class="note">Zadej e-mail a heslo, které jsi vytvořil v Supabase. Stačí jednou, pak zůstaneš přihlášený.</p><div class="field"><label for="lg_e">E-mail</label><input id="lg_e" type="email" autocomplete="username" autocapitalize="off"></div><div class="field"><label for="lg_p">Heslo</label><input id="lg_p" type="password" autocomplete="current-password"></div><button class="btn block" data-act="dologin">Přihlásit</button><p class="note" id="lg_err"></p></div></div>';
+  function h(e){var t=e.target.closest('[data-act=dologin]');if(!t)return;var em=(document.getElementById('lg_e').value||'').trim();var pw=document.getElementById('lg_p').value||'';var err=document.getElementById('lg_err');err.textContent='Přihlašuji…';t.disabled=true;
+    sb.auth.signInWithPassword({email:em,password:pw}).then(function(r){if(r.error){err.textContent='Nepovedlo se: '+r.error.message;t.disabled=false;}else{ov.removeEventListener('click',h);ov.innerHTML='';res();}});}
+  ov.addEventListener('click',h);
+})}
+function applyRemote(nd){try{if(nd&&nd.users){S=fillDefaults(nd);S.me=deviceRole;if(!appEl.hidden){var busy=document.activeElement&&(document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='TEXTAREA');if(!busy)render();}}}catch(e){}}
+function initCloud(){
+  if(typeof window==='undefined'||!window.supabase||!window.supabase.createClient)return;
+  try{sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}});}catch(e){return}
+  function afterAuth(session){
+    deviceRole=emailRole(session.user.email);S.me=deviceRole;
+    sb.from('state').select('data').eq('id',1).single().then(function(res){
+      var d=res&&res.data?res.data.data:null;
+      if(!d||!d.users){var sd=prodSeed();var payload=Object.assign({},sd);delete payload.me;sb.from('state').update({data:payload,updated_by:deviceRole,updated_at:new Date().toISOString()}).eq('id',1).then(function(){},function(){});S=sd;S.me=deviceRole;}
+      else{S=fillDefaults(d);S.me=deviceRole;}
+      cloudReady=true;save();
+      try{sb.channel('state-sync').on('postgres_changes',{event:'UPDATE',schema:'public',table:'state'},function(p){if(p&&p.new){if(p.new.updated_by===deviceRole)return;applyRemote(p.new.data);}}).subscribe();}catch(e){}
+      if(!appEl.hidden)render();
+    },function(){cloudReady=true;});
+  }
+  sb.auth.getSession().then(function(r){
+    var session=r&&r.data?r.data.session:null;
+    if(session){afterAuth(session);}
+    else{showLogin().then(function(){sb.auth.getSession().then(function(r2){var s2=r2&&r2.data?r2.data.session:null;if(s2)afterAuth(s2);});});}
+  },function(){});
+}
+initCloud();
+
+})();</script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
 </body>
 </html>
