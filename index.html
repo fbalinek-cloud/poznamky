@@ -71,6 +71,10 @@ nav button{font-size:12px}
 .spark i{flex:1;height:var(--h);background:var(--gold);border-radius:4px 4px 0 0;opacity:.85}
 .pairnote{padding:8px 10px;border-radius:10px;background:var(--surface2);color:var(--gold)}
 .cyc-head{display:flex;gap:16px;align-items:center}
+.fc{display:flex;flex-direction:column;gap:0}
+.fc-row{display:flex;flex-direction:column;gap:2px;padding:9px 0;border-bottom:1px solid var(--line)}
+.fc-row:last-child{border-bottom:0}
+.fc-row b{font-variant-numeric:tabular-nums}
 .ring{width:78px;height:78px;border-radius:50%;flex:none;display:grid;place-content:center;text-align:center;
   background:radial-gradient(closest-side,var(--surface) 78%,transparent 80%),conic-gradient(var(--accent) calc(var(--p)*1%),var(--surface2) 0)}
 .ring b{font-family:var(--display);font-size:24px;line-height:1}.ring span{font-size:11px;color:var(--muted)}
@@ -554,6 +558,11 @@ const D=s=>new Date(s+'T12:00:00');
 const addD=(s,n)=>{const d=D(s);d.setDate(d.getDate()+n);return iso(d)};
 const diffD=(a,b)=>Math.round((D(b)-D(a))/DAY);
 const czD=s=>{const d=D(s);return d.getDate()+'. '+(d.getMonth()+1)+'.'};
+function czR(a,b){var da=D(a),db=D(b);if(da.getMonth()===db.getMonth())return da.getDate()+'.\u2013'+db.getDate()+'. '+(db.getMonth()+1)+'.';return da.getDate()+'. '+(da.getMonth()+1)+'. \u2013 '+db.getDate()+'. '+(db.getMonth()+1)+'.'}
+function forecastList(c){if(!c)return '';var out=[],s=c.last.start,i=0,today=iso(new Date()),horizon=addD(today,285);
+  while(i<12){s=addD(s,c.avg);if(s>horizon)break;var pe=addD(s,(c.pl||6)-1),ov=addD(s,c.avg-14),fs=addD(ov,-5),fe=addD(ov,1);
+    out.push('<div class="fc-row"><b>\uD83E\uDE78 '+czR(s,pe)+'</b><span class="small" style="color:var(--green)">plodn\u00e9 dny '+czR(fs,fe)+'</span></div>');i++}
+  return out.length?'<div class="sec"><h3>P\u0159edpov\u011b\u010f (orienta\u010dn\u00ed)</h3><div class="card fc">'+out.join('')+'</div><p class="note">Odhad z obvykl\u00e9ho cyklu '+c.avg+' dn\u00ed a menstruace ~'+(c.pl||6)+' dn\u00ed. \u010c\u00edm d\u00e1l, t\u00edm m\u00e9n\u011b p\u0159esn\u00e9 \u2014 ka\u017ed\u00fd z\u00e1pis ho zp\u0159esn\u00ed.</p></div>':''}
 let psub='stats',rf={overall:0,cat:{},tags:[],note:''},calOff=0,selDay=null;
 
 function moodStrip(v){const days=[],end=new Date();end.setHours(23,59,59,999);
@@ -609,6 +618,7 @@ function cycleView(v,edit){const c=cyc();
     return `<div class="kv"><span>${czD(p.start)}${p.end?'–'+czD(p.end):''}</span><span style="display:flex;gap:8px;align-items:center"><span class="muted">${nx?diffD(p.start,nx.start)+' dní':'probíhá'}</span>${edit?`<button class="chip sm del" data-act="delperiod" data-start="${p.start}">Smazat</button>`:''}</span></div>`}).join(''):'';
   return `${head}${calendar(c,true)}${panel}
     ${hist?`<div class="sec"><h3>Poslední cykly</h3><div class="card small">${hist}</div></div>`:''}
+    ${forecastList(c)}
     ${phaseChart(c)}
     <p class="note">Odhad vychází z předchozích cyklů a může se lišit. Nepoužívejte ho jako antikoncepci.</p>`}
 const PHASES=['Menstruace','Folikulární','Plodné dny','Luteální'];
