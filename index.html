@@ -87,7 +87,7 @@ nav button{font-size:12px}
 .cd:disabled{cursor:default}
 .cd.per{background:#ef5a5a;color:#fff}
 .cd.per.fl-1{background:#ef5a5a99}.cd.per.fl-3{background:#c9303a}
-.cd.pred{border:1.5px dashed #ef5a5a}
+.cd.pred{background:#ef5a5a40;border:1.5px dashed #ef5a5a;color:#fff}
 .cd.fert{background:#4cc38a26}
 .cd.ov{background:#4cc38a;color:#06210f;font-weight:700}
 .cd.today{outline:2px solid var(--fg);outline-offset:-2px}
@@ -589,8 +589,8 @@ function cyc(){const C=S.cycle,ps=[...C.periods].sort((a,b)=>a.start<b.start?-1:
   return {ps,lens,avg,pl,last,day,next,ov,fs,fe,inP,phase,today}}
 function dayKind(s,c){const k=[];
   for(const p of c.ps){const e=p.end||addD(p.start,c.pl-1);if(s>=p.start&&s<=e){k.push('per');break}}
-  if(!k.includes('per')){for(let n=0;n<3;n++){const ns=addD(c.next,n*c.avg),ne=addD(ns,c.pl-1);if(s>=ns&&s<=ne&&s>c.today){k.push('pred');break}}
-    for(let n=0;n<3;n++){const ov=addD(addD(c.next,n*c.avg),-14);if(s===ov)k.push('ov');else if(s>=addD(ov,-5)&&s<=addD(ov,1))k.push('fert')}}
+  if(!k.includes('per')){for(let n=0;n<12;n++){const ns=addD(c.next,n*c.avg),ne=addD(ns,(c.pl||6)-1);if(s>=ns&&s<=ne&&s>c.today){k.push('pred');break}}
+    for(let n=0;n<12;n++){const ov=addD(addD(c.next,n*c.avg),-14);if(s===ov)k.push('ov');else if(s>=addD(ov,-5)&&s<=addD(ov,1))k.push('fert')}}
   return k}
 function calendar(c,edit){const base=new Date();base.setDate(1);base.setMonth(base.getMonth()+calOff);
   const y=base.getFullYear(),m=base.getMonth(),first=(base.getDay()+6)%7,n=new Date(y,m+1,0).getDate();
